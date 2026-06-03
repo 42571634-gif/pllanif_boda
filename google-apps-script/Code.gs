@@ -11,7 +11,7 @@
  */
 
 const CONFIG = {
-  SPREADSHEET_ID: "PASTE_YOUR_SPREADSHEET_ID_HERE",
+  SPREADSHEET_ID: "1Sf-OGOg58ZhxwKKiqiAVPrbrbijpKf7_OsPFOcUwnlU",
   APP_KEY: "boda-2026",
   SHEETS: {
     vendors: "vendors",
