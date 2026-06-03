@@ -3,3 +3,32 @@
   background: var(--danger-soft);
   color: var(--danger);
 }
+
+.api-config {
+  display: grid;
+  gap: 8px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.check-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--teal);
+}
+
+.api-url-field {
+  gap: 5px;
+}
+
+.api-url-field input[readonly] {
+  background: #f6f7f8;
+  color: var(--muted);
+}
