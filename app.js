@@ -1,6 +1,6 @@
 const ACCESS_KEY = "boda-2026";
 const STORAGE_PREFIX = "weddingPlanner";
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxrFW8T-LiuDW4PnVP-i_T7gJzjRr1nJhTnUSZV9VoIIWkZEXzoNsIdJIghq9gkG8XP/exec";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxTnacdtk_tAOfp4rSVOkDFs-4gYSQunZtI8RHxkwTlQdXUw6s98w-_k0efp4kmTY6rMA/exec";
 
 const categories = [
   { id: "cat_local", name: "Local" },
@@ -126,6 +126,8 @@ const seedData = {
 
 let state = migrateState(loadState());
 let route = "home";
+let routeHistory = [];
+let menuOpen = false;
 let filters = {
   vendorSearch: "",
   vendorCategory: "all",
@@ -185,10 +187,24 @@ function renderLocked(attemptedKey) {
 function renderApp() {
   app.innerHTML = `
     <div class="main-layout">
-      <aside class="sidebar">
-        <div class="brand">
+      <header class="app-bar">
+        <button class="menu-trigger" data-action="open-menu" title="Abrir menu" aria-label="Abrir menu">
+          <span></span><span></span><span></span>
+        </button>
+        ${route !== "home" ? `<button class="back-btn" data-action="go-back" title="Regresar">&lt;</button>` : ""}
+        <div class="brand app-brand">
           <strong>Nuestra boda</strong>
           <span>Datos locales + Drive</span>
+        </div>
+      </header>
+      <div class="drawer-scrim ${menuOpen ? "open" : ""}" data-action="close-menu"></div>
+      <aside class="sidebar ${menuOpen ? "open" : ""}" aria-label="Menu principal">
+        <div class="drawer-head">
+          <div class="brand">
+            <strong>Nuestra boda</strong>
+            <span>Datos locales + Drive</span>
+          </div>
+          <button class="icon-btn" data-action="close-menu" title="Cerrar">x</button>
         </div>
         <nav class="nav">
           ${navButton("home", "Inicio")}
@@ -208,8 +224,7 @@ function renderApp() {
 
   document.querySelectorAll("[data-route]").forEach((button) => {
     button.addEventListener("click", () => {
-      route = button.dataset.route;
-      renderApp();
+      navigateTo(button.dataset.route);
     });
   });
   document.querySelectorAll("[data-action]").forEach((button) => {
@@ -220,6 +235,24 @@ function renderApp() {
 
 function navButton(id, label) {
   return `<button class="${route === id ? "active" : ""}" data-route="${id}" title="${label}">${label}</button>`;
+}
+
+function navigateTo(nextRoute) {
+  if (nextRoute === route) {
+    menuOpen = false;
+    renderApp();
+    return;
+  }
+  routeHistory.push(route);
+  route = nextRoute;
+  menuOpen = false;
+  renderApp();
+}
+
+function goBack() {
+  route = routeHistory.pop() || "home";
+  menuOpen = false;
+  renderApp();
 }
 
 function renderRoute() {
@@ -488,6 +521,20 @@ function bindFilters() {
 }
 
 function handleAction(action, id) {
+  if (action === "open-menu") {
+    menuOpen = true;
+    renderApp();
+    return;
+  }
+  if (action === "close-menu") {
+    menuOpen = false;
+    renderApp();
+    return;
+  }
+  if (action === "go-back") {
+    goBack();
+    return;
+  }
   if (action === "toggle-category") {
     filters.openCategories[id] = filters.openCategories[id] === false;
     renderApp();
