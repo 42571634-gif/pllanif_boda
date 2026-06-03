@@ -28,12 +28,49 @@ index.html?key=boda-2026
 - Confirmacion de exito para operaciones.
 - Reconfirmacion antes de eliminar.
 - Persistencia local con `localStorage`.
-- Simulacion de carga/subida a Drive usando la key como namespace.
+- Sincronizacion opcional con Google Sheets mediante Apps Script.
 
-## Proximo paso tecnico
+## Google Apps Script
 
-Conectar los botones `Cargar desde Drive` y `Subir a Drive` a una fuente real:
+El archivo `google-apps-script/Code.gs` contiene una API simple para leer y escribir contra Google Sheets.
 
-1. Google Apps Script como API sobre Google Sheets.
-2. Google Sheets API con OAuth.
-3. Export/import manual de JSON como puente temporal.
+### Configuracion manual
+
+1. Crea o abre el Google Sheet que usara la app como repositorio.
+2. Copia el ID del spreadsheet desde la URL:
+
+```text
+https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+```
+
+3. En Google Sheets, abre `Extensiones > Apps Script`.
+4. Pega el contenido de `google-apps-script/Code.gs`.
+5. Cambia estos parametros:
+
+```js
+SPREADSHEET_ID: "PASTE_YOUR_SPREADSHEET_ID_HERE",
+APP_KEY: "boda-2026",
+```
+
+6. Despliega como Web App:
+
+```text
+Deploy > New deployment > Web app
+Execute as: Me
+Who has access: Anyone with the link
+```
+
+7. Copia la Web App URL generada.
+8. Abre el front con ambos parametros:
+
+```text
+https://42571634-gif.github.io/pllanif_boda/?key=boda-2026&api=WEB_APP_URL
+```
+
+La key del front se envia al Apps Script. Si no coincide con `APP_KEY`, el script rechaza la operacion.
+
+### Uso
+
+- `Cargar desde Drive`: descarga `vendors`, `payments` y `budgets` desde Google Sheets.
+- `Subir a Drive`: reemplaza esas tablas en Google Sheets con el estado local actual.
+- Si no pasas `api=WEB_APP_URL`, la app conserva el modo local simulado con `localStorage`.
