@@ -1,0 +1,5 @@
+.error-toast {
+  border-color: #fecdca;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
