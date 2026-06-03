@@ -1,5 +1,6 @@
 const ACCESS_KEY = "boda-2026";
 const STORAGE_PREFIX = "weddingPlanner";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxrFW8T-LiuDW4PnVP-i_T7gJzjRr1nJhTnUSZV9VoIIWkZEXzoNsIdJIghq9gkG8XP/exec";
 
 const categories = [
   { id: "cat_local", name: "Local" },
@@ -140,11 +141,15 @@ init();
 function init() {
   const url = new URL(window.location.href);
   const key = url.searchParams.get("key");
+  const apiUrl = url.searchParams.get("api");
   if (key !== ACCESS_KEY) {
     renderLocked(key);
     return;
   }
   state.sync.remoteKey = key;
+  if (apiUrl) {
+    state.sync.apiUrl = apiUrl;
+  }
   saveState();
   renderApp();
 }
@@ -194,7 +199,7 @@ function renderApp() {
         <div class="sync-box">
           <button class="btn secondary" data-action="load-google">Cargar desde Drive</button>
           <button class="btn secondary" data-action="save-google">Subir a Drive</button>
-          <small>${state.sync.lastSyncAt ? `Ultima sincronizacion: ${formatDateTime(state.sync.lastSyncAt)}` : "Sin sincronizacion remota todavia."}</small>
+          <small>${syncStatusText()}</small>
         </div>
       </aside>
       <main class="content">${renderRoute()}</main>
@@ -688,14 +693,32 @@ function showSuccess(message) {
   }, 2200);
 }
 
-function simulateGoogleSave() {
+function showError(message) {
+  renderApp();
+  modalRoot.innerHTML = `<div class="toast error-toast"><strong>Operacion fallida</strong><br>${escapeHtml(message)}</div>`;
+  setTimeout(() => {
+    if (modalRoot.querySelector(".toast")) modalRoot.innerHTML = "";
+  }, 4200);
+}
+
+async function simulateGoogleSave() {
+  const apiUrl = getApiUrl();
+  if (apiUrl) {
+    await uploadToGoogle(apiUrl);
+    return;
+  }
   state.sync.lastSyncAt = new Date().toISOString();
   localStorage.setItem(remoteStorageKey(), JSON.stringify(state));
   saveState();
   showSuccess("Contenido local preparado y guardado en el espacio remoto simulado por key.");
 }
 
-function simulateGoogleLoad() {
+async function simulateGoogleLoad() {
+  const apiUrl = getApiUrl();
+  if (apiUrl) {
+    await downloadFromGoogle(apiUrl);
+    return;
+  }
   const remote = localStorage.getItem(remoteStorageKey());
   if (remote) {
     state = migrateState(JSON.parse(remote));
@@ -703,6 +726,59 @@ function simulateGoogleLoad() {
     showSuccess("Data cargada desde el espacio remoto simulado por key.");
   } else {
     showSuccess("No hay datos remotos todavia para esta key. Puedes subir cambios primero.");
+  }
+}
+
+async function uploadToGoogle(apiUrl) {
+  try {
+    const payload = {
+      action: "upload",
+      key: state.sync.remoteKey || ACCESS_KEY,
+      actor: "front",
+      data: {
+        vendors: state.vendors,
+        payments: state.payments,
+        budgets: state.budgets,
+      },
+    };
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error || "No se pudo subir la data.");
+    state.sync.lastSyncAt = result.savedAt || new Date().toISOString();
+    saveState();
+    showSuccess("Data subida correctamente a Google Sheets.");
+  } catch (error) {
+    showError(`No se pudo subir a Google: ${error.message}`);
+  }
+}
+
+async function downloadFromGoogle(apiUrl) {
+  try {
+    const url = new URL(apiUrl);
+    url.searchParams.set("action", "download");
+    url.searchParams.set("key", state.sync.remoteKey || ACCESS_KEY);
+    const response = await fetch(url.toString());
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error || "No se pudo descargar la data.");
+    state = migrateState({
+      ...state,
+      vendors: result.data.vendors || [],
+      payments: result.data.payments || [],
+      budgets: result.data.budgets || [],
+      sync: {
+        ...state.sync,
+        ...(result.data.sync || {}),
+        lastSyncAt: new Date().toISOString(),
+      },
+    });
+    saveState();
+    showSuccess("Data cargada correctamente desde Google Sheets.");
+  } catch (error) {
+    showError(`No se pudo cargar desde Google: ${error.message}`);
   }
 }
 
@@ -722,8 +798,18 @@ function migrateState(nextState) {
   if (!nextState.budgets.some((budget) => budget.budget_type === "global" || budget.id === "budget_global_001")) {
     nextState.budgets.unshift({ id: "budget_global_001", budget_type: "global", category_id: "", amount: 50000, currency: "PEN" });
   }
-  nextState.sync = nextState.sync || { lastSyncAt: "", remoteKey: "" };
+  nextState.sync = nextState.sync || { lastSyncAt: "", remoteKey: "", apiUrl: "" };
   return nextState;
+}
+
+function getApiUrl() {
+  return state.sync.apiUrl || DEFAULT_API_URL;
+}
+
+function syncStatusText() {
+  const mode = getApiUrl() ? "Google Sheets conectado" : "Modo local simulado";
+  const lastSync = state.sync.lastSyncAt ? `Ultima sincronizacion: ${formatDateTime(state.sync.lastSyncAt)}` : "Sin sincronizacion remota todavia.";
+  return `${mode}. ${lastSync}`;
 }
 
 function remoteStorageKey() {
