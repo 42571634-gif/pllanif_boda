@@ -1,6 +1,8 @@
 const ACCESS_KEY = "boda-2026";
 const STORAGE_PREFIX = "weddingPlanner";
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbxTnacdtk_tAOfp4rSVOkDFs-4gYSQunZtI8RHxkwTlQdXUw6s98w-_k0efp4kmTY6rMA/exec";
+const DEFAULT_API_URL = "";
+const API_PLACEHOLDER = "https://script.google.com/macros/s/TU_DEPLOYMENT_ID/exec";
+const LOCAL_API_VALUES = ["local", "none", "off"];
 
 const categories = [
   { id: "cat_local", name: "Local" },
@@ -149,8 +151,8 @@ function init() {
     return;
   }
   state.sync.remoteKey = key;
-  if (apiUrl) {
-    state.sync.apiUrl = apiUrl;
+  if (apiUrl !== null) {
+    state.sync.apiUrl = apiUrl.trim();
   }
   saveState();
   renderApp();
@@ -198,7 +200,7 @@ function renderApp() {
         </div>
       </header>
       <div class="drawer-scrim ${menuOpen ? "open" : ""}" data-action="close-menu"></div>
-      <aside class="sidebar ${menuOpen ? "open" : ""}" aria-label="Menu principal">
+      <aside class="sidebar drawer-sidebar ${menuOpen ? "open" : ""}" aria-label="Menu principal">
         <div class="drawer-head">
           <div class="brand">
             <strong>Nuestra boda</strong>
@@ -213,6 +215,24 @@ function renderApp() {
           ${navButton("budget", "Presupuesto")}
         </nav>
         <div class="sync-box">
+          <form id="api-config-form" class="api-config">
+            <label class="check-row">
+              <input id="api-edit-toggle" type="checkbox" />
+              <span>Cambiar API</span>
+            </label>
+            <label class="field api-url-field">
+              <span>URL Apps Script</span>
+              <input
+                id="api-url-input"
+                name="apiUrl"
+                type="url"
+                value="${escapeHtml(state.sync.apiUrl || "") }"
+                placeholder="${API_PLACEHOLDER}"
+                readonly
+              />
+            </label>
+            <button class="btn secondary" id="api-save-button" type="submit" disabled>Guardar API</button>
+          </form>
           <button class="btn secondary" data-action="load-google">Cargar desde Drive</button>
           <button class="btn secondary" data-action="save-google">Subir a Drive</button>
           <small>${syncStatusText()}</small>
@@ -231,6 +251,7 @@ function renderApp() {
     button.addEventListener("click", () => handleAction(button.dataset.action, button.dataset.id));
   });
   bindFilters();
+  bindApiConfig();
 }
 
 function navButton(id, label) {
@@ -520,6 +541,33 @@ function bindFilters() {
   }
 }
 
+function bindApiConfig() {
+  const form = document.getElementById("api-config-form");
+  const toggle = document.getElementById("api-edit-toggle");
+  const input = document.getElementById("api-url-input");
+  const saveButton = document.getElementById("api-save-button");
+  if (!form || !toggle || !input || !saveButton) return;
+
+  toggle.addEventListener("change", () => {
+    input.readOnly = !toggle.checked;
+    saveButton.disabled = !toggle.checked;
+    if (toggle.checked) input.focus();
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!toggle.checked) return;
+    const nextApiUrl = input.value.trim();
+    if (nextApiUrl && !isValidApiUrl(nextApiUrl) && !LOCAL_API_VALUES.includes(nextApiUrl.toLowerCase())) {
+      showError("La URL del Apps Script debe empezar con https://script.google.com/macros/s/ o usa local para modo local.");
+      return;
+    }
+    state.sync.apiUrl = nextApiUrl;
+    saveState();
+    showSuccess(nextApiUrl ? "API de Apps Script guardada en este navegador." : "API limpiada. La app queda en modo local.");
+  });
+}
+
 function handleAction(action, id) {
   if (action === "open-menu") {
     menuOpen = true;
@@ -793,7 +841,7 @@ async function uploadToGoogle(apiUrl) {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload),
     });
-    const result = await response.json();
+    const result = await parseApiResponse(response);
     if (!result.ok) throw new Error(result.error || "No se pudo subir la data.");
     state.sync.lastSyncAt = result.savedAt || new Date().toISOString();
     saveState();
@@ -809,7 +857,7 @@ async function downloadFromGoogle(apiUrl) {
     url.searchParams.set("action", "download");
     url.searchParams.set("key", state.sync.remoteKey || ACCESS_KEY);
     const response = await fetch(url.toString());
-    const result = await response.json();
+    const result = await parseApiResponse(response);
     if (!result.ok) throw new Error(result.error || "No se pudo descargar la data.");
     state = migrateState({
       ...state,
@@ -850,7 +898,29 @@ function migrateState(nextState) {
 }
 
 function getApiUrl() {
+  if (LOCAL_API_VALUES.includes(String(state.sync.apiUrl || "").toLowerCase())) return "";
   return state.sync.apiUrl || DEFAULT_API_URL;
+}
+
+function isValidApiUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "script.google.com" && url.pathname.includes("/macros/s/");
+  } catch {
+    return false;
+  }
+}
+
+async function parseApiResponse(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (text.includes("accounts.google.com") || text.includes("ServiceLogin")) {
+      throw new Error("El Web App de Apps Script esta pidiendo login. Revisa el despliegue: Who has access debe ser Anyone with the link.");
+    }
+    throw new Error(`Apps Script no devolvio JSON valido. Inicio de respuesta: ${text.slice(0, 120)}`);
+  }
 }
 
 function syncStatusText() {
