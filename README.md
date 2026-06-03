@@ -73,7 +73,13 @@ Who has access: Anyone with the link
 https://42571634-gif.github.io/pllanif_boda/?key=boda-2026
 ```
 
-La URL del Web App ya esta guardada como API por defecto en `app.js`. Si necesitas usar otro Apps Script temporalmente, puedes sobreescribirlo con:
+La URL del Web App ya esta guardada como API por defecto en `app.js`:
+
+```text
+https://script.google.com/macros/s/AKfycbxTnacdtk_tAOfp4rSVOkDFs-4gYSQunZtI8RHxkwTlQdXUw6s98w-_k0efp4kmTY6rMA/exec
+```
+
+Si necesitas usar otro Apps Script temporalmente, puedes sobreescribirlo con:
 
 ```text
 https://42571634-gif.github.io/pllanif_boda/?key=boda-2026&api=WEB_APP_URL
