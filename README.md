@@ -16,6 +16,12 @@ Tambien puedes abrirla con la key en la URL:
 index.html?key=boda-2026
 ```
 
+URL principal con Google Apps Script conectado:
+
+```text
+https://42571634-gif.github.io/pllanif_boda/?key=boda-2026
+```
+
 ## Estado actual
 
 - Bienvenida y menu principal.
@@ -61,7 +67,13 @@ Who has access: Anyone with the link
 ```
 
 7. Copia la Web App URL generada.
-8. Abre el front con ambos parametros:
+8. Abre el front con la key:
+
+```text
+https://42571634-gif.github.io/pllanif_boda/?key=boda-2026
+```
+
+La URL del Web App ya esta guardada como API por defecto en `app.js`. Si necesitas usar otro Apps Script temporalmente, puedes sobreescribirlo con:
 
 ```text
 https://42571634-gif.github.io/pllanif_boda/?key=boda-2026&api=WEB_APP_URL
