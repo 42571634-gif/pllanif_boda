@@ -30,6 +30,54 @@
   gap: 10px;
 }
 
+.photo-upload-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.photo-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.photo-progress-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-progress-row strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.photo-progress-row[data-status="working"] {
+  border-color: #8ecae6;
+  background: #f0f9ff;
+}
+
+.photo-progress-row[data-status="done"] {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.photo-progress-row[data-status="error"] {
+  border-color: #fecdca;
+  background: var(--danger-soft);
+}
+
+.photo-progress-row[data-status="error"] strong {
+  color: var(--danger);
+}
+
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
