@@ -1,0 +1,78 @@
+.modal.wide {
+  width: min(100%, 980px);
+}
+
+.inline-error {
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.photo-manager {
+  gap: 16px;
+}
+
+.photo-upload {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.photo-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.photo-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.photo-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #edf0f2;
+}
+
+.photo-card-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.photo-card-body strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-card-body span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.photo-card .row-actions {
+  justify-content: stretch;
+}
+
+.photo-card .action-btn {
+  flex: 1;
+}
