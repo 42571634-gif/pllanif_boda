@@ -2,8 +2,10 @@
   if (typeof openVendorPhotos === "function") return;
 
   const PHOTO_MAX_PER_VENDOR = 10;
-  const PHOTO_MAX_SIZE_BYTES = 512000;
-  const PHOTO_BATCH_SIZE = 3;
+  const PHOTO_MAX_ORIGINAL_SIZE_BYTES = 1887437;
+  const PHOTO_MAX_UPLOAD_SIZE_BYTES = 512000;
+  const PHOTO_MAX_DIMENSION = 1600;
+  const PHOTO_JPEG_QUALITY = 0.78;
   const PHOTO_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
   const originalVendorListItem = vendorListItem;
@@ -45,7 +47,7 @@
       <div class="modal-head">
         <div>
           <h2>Fotos - ${escapeHtml(vendor.name)}</h2>
-          <p class="hint">Hasta ${PHOTO_MAX_PER_VENDOR} fotos, ${formatPhotoBytes(PHOTO_MAX_SIZE_BYTES)} por archivo y ${PHOTO_BATCH_SIZE} por lote.</p>
+          <p class="hint">Hasta ${PHOTO_MAX_PER_VENDOR} fotos. Original maximo ${formatPhotoBytes(PHOTO_MAX_ORIGINAL_SIZE_BYTES)}; la app comprime antes de subir.</p>
         </div>
         <button class="icon-btn" type="button" data-close title="Cerrar">x</button>
       </div>
@@ -69,9 +71,10 @@
           <button class="btn" type="submit" ${remaining ? "" : "disabled"}>Subir fotos</button>
           ${vendor.drive_folder_url ? `<a class="btn secondary" href="${escapeHtml(vendor.drive_folder_url)}" target="_blank" rel="noreferrer">Abrir carpeta</a>` : ""}
         </div>
-        <p class="hint">Disponibles: ${remaining}. Si seleccionas mas de ${PHOTO_BATCH_SIZE}, la app subira automaticamente en lotes.</p>
+        <p class="hint">Disponibles: ${remaining}. Puedes seleccionar varias fotos; se comprimen y suben una por una.</p>
       </form>
       <div id="photo-status" class="hint">${loading ? "Cargando fotos..." : ""}</div>
+      <div id="photo-upload-progress" class="photo-upload-progress" aria-live="polite"></div>
       <section class="photo-grid">
         ${
           activePhotos.length
@@ -136,19 +139,22 @@
     try {
       const activeCount = currentPhotos.filter((photo) => !photo.is_deleted).length;
       validatePhotoFiles(files, activeCount);
-      setPhotoStatus("Preparando fotos...");
-      const payloads = await Promise.all(files.map(fileToPhotoPayload));
-      const batches = chunkPhotos(payloads, PHOTO_BATCH_SIZE);
+      renderPhotoProgress(files.map((file) => ({ name: file.name, status: "waiting", detail: formatPhotoBytes(file.size) })));
 
-      for (let index = 0; index < batches.length; index += 1) {
-        setPhotoStatus(`Subiendo lote ${index + 1} de ${batches.length}...`);
-        await uploadVendorPhotos(vendorId, batches[index]);
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const label = `${index + 1} de ${files.length}`;
+        updatePhotoProgress(index, "working", `Comprimiendo ${label}...`);
+        const payload = await fileToCompressedPhotoPayload(file);
+        updatePhotoProgress(index, "working", `Subiendo ${label}: ${formatPhotoBytes(payload.size_bytes)}...`);
+        await uploadVendorPhoto(vendorId, payload);
+        updatePhotoProgress(index, "done", `Subida como ${formatPhotoBytes(payload.size_bytes)}.`);
       }
 
       await refreshVendorPhotos(vendorId, "Fotos subidas correctamente.");
     } catch (error) {
-      const photos = await safeListVendorPhotos(vendorId);
-      renderPhotosContent(vendorId, photos, false, error.message);
+      markActivePhotoProgressError(error.message);
+      setPhotoStatus(error.message);
     }
   }
 
@@ -160,25 +166,84 @@
 
     files.forEach((file) => {
       if (!PHOTO_MIME_TYPES.includes(file.type)) throw new Error(`${file.name} no es JPG, PNG o WEBP.`);
-      if (file.size > PHOTO_MAX_SIZE_BYTES) throw new Error(`${file.name} supera ${formatPhotoBytes(PHOTO_MAX_SIZE_BYTES)}.`);
+      if (file.size > PHOTO_MAX_ORIGINAL_SIZE_BYTES) throw new Error(`${file.name} supera ${formatPhotoBytes(PHOTO_MAX_ORIGINAL_SIZE_BYTES)}.`);
     });
   }
 
-  function fileToPhotoPayload(file) {
+  async function fileToCompressedPhotoPayload(file) {
+    const image = await loadPhotoImage(file);
+    const dimensions = fitPhotoDimensions(image.width, image.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = dimensions.width;
+    canvas.height = dimensions.height;
+
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+    URL.revokeObjectURL(image.src);
+
+    let blob = await canvasToBlob(canvas, "image/jpeg", PHOTO_JPEG_QUALITY);
+    if (blob.size > PHOTO_MAX_UPLOAD_SIZE_BYTES) {
+      blob = await canvasToBlob(canvas, "image/jpeg", 0.68);
+    }
+    if (blob.size > PHOTO_MAX_UPLOAD_SIZE_BYTES) {
+      throw new Error(`${file.name} no pudo comprimirse por debajo de ${formatPhotoBytes(PHOTO_MAX_UPLOAD_SIZE_BYTES)}.`);
+    }
+
+    return blobToPhotoPayload(blob, renamePhotoAsJpeg(file.name));
+  }
+
+  function loadPhotoImage(file) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      const url = URL.createObjectURL(file);
+      image.onload = () => resolve(image);
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error(`No se pudo preparar ${file.name}.`));
+      };
+      image.src = url;
+    });
+  }
+
+  function fitPhotoDimensions(width, height) {
+    const maxSide = Math.max(width, height);
+    if (maxSide <= PHOTO_MAX_DIMENSION) return { width, height };
+    const scale = PHOTO_MAX_DIMENSION / maxSide;
+    return {
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale)),
+    };
+  }
+
+  function canvasToBlob(canvas, type, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("No se pudo comprimir la foto."));
+      }, type, quality);
+    });
+  }
+
+  function blobToPhotoPayload(blob, fileName) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = String(reader.result || "");
         resolve({
-          file_name: file.name,
-          mime_type: file.type,
-          size_bytes: file.size,
+          file_name: fileName,
+          mime_type: blob.type || "image/jpeg",
+          size_bytes: blob.size,
           base64: dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl,
         });
       };
-      reader.onerror = () => reject(new Error(`No se pudo leer ${file.name}.`));
-      reader.readAsDataURL(file);
+      reader.onerror = () => reject(new Error(`No se pudo leer ${fileName}.`));
+      reader.readAsDataURL(blob);
     });
+  }
+
+  function renamePhotoAsJpeg(fileName) {
+    const cleanName = String(fileName || "foto").replace(/\.[^.]+$/, "");
+    return `${cleanName || "foto"}.jpg`;
   }
 
   async function listVendorPhotos(vendorId) {
@@ -210,6 +275,12 @@
       }
       return { ok: true, photos: uploaded.map((item) => item.photo).filter(Boolean) };
     }
+  }
+
+  async function uploadVendorPhoto(vendorId, photo) {
+    const apiUrl = getApiUrl();
+    if (!apiUrl) throw new Error("Configura la URL Apps Script antes de subir fotos.");
+    return postToGooglePhotos(apiUrl, { action: "uploadVendorPhoto", vendor_id: vendorId, ...photo });
   }
 
   async function deleteVendorPhoto(vendorId, photoId) {
@@ -260,17 +331,43 @@
     if (status) status.textContent = message;
   }
 
+  function renderPhotoProgress(items) {
+    const progress = document.getElementById("photo-upload-progress");
+    if (!progress) return;
+    progress.innerHTML = items
+      .map(
+        (item, index) => `
+          <div class="photo-progress-row" data-progress-index="${index}" data-status="${item.status}">
+            <span>${escapeHtml(item.name)}</span>
+            <strong>${escapeHtml(item.detail)}</strong>
+          </div>
+        `,
+      )
+      .join("");
+    setPhotoStatus("Preparando fotos...");
+  }
+
+  function updatePhotoProgress(index, status, detail) {
+    const row = document.querySelector(`[data-progress-index="${index}"]`);
+    if (!row) return;
+    row.dataset.status = status;
+    const detailNode = row.querySelector("strong");
+    if (detailNode) detailNode.textContent = detail;
+    setPhotoStatus(detail);
+  }
+
+  function markActivePhotoProgressError(message) {
+    const active = document.querySelector('.photo-progress-row[data-status="working"]');
+    if (!active) return;
+    active.dataset.status = "error";
+    const detailNode = active.querySelector("strong");
+    if (detailNode) detailNode.textContent = message;
+  }
+
   function formatPhotoBytes(value) {
     const bytes = Number(value || 0);
     if (bytes < 1024) return `${bytes} B`;
-    return `${Math.round(bytes / 1024)} KB`;
-  }
-
-  function chunkPhotos(items, size) {
-    const groups = [];
-    for (let index = 0; index < items.length; index += size) {
-      groups.push(items.slice(index, index + size));
-    }
-    return groups;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
 })();
