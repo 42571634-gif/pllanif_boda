@@ -458,6 +458,21 @@ h3 {
   line-height: 1.4;
 }
 
+.vendor-description a {
+  color: var(--teal);
+  font-weight: 800;
+}
+
+.link-button {
+  display: inline;
+  margin-left: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--teal);
+  font-weight: 900;
+  text-decoration: underline;
+}
+
 .rating-summary {
   display: grid;
   gap: 8px;
