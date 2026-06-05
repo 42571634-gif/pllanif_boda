@@ -1,26 +1,18 @@
 (function () {
-  if (typeof vendorListItem !== "function" || typeof handleAction !== "function") return;
+  if (!window.extensionRegistry) return;
 
   const DESCRIPTION_SNIPPET_LENGTH = 160;
   filters.expandedDescriptions = filters.expandedDescriptions || {};
 
-  const originalVendorListItem = vendorListItem;
-  vendorListItem = function patchedDescriptionVendorListItem(vendor) {
-    const html = originalVendorListItem(vendor);
-    const fullDescription = String(vendor.description_rich || "Sin descripcion").trim();
-    const currentParagraph = `<p>${escapeHtml(vendor.description_rich || "Sin descripcion")}</p>`;
-    return html.replace(currentParagraph, renderExpandableDescription(vendor, fullDescription));
-  };
+  window.extensionRegistry.registerVendorDescription((vendor) => {
+    const description = String(vendor.description_rich || "Sin descripcion").trim();
+    return renderExpandableDescription(vendor, description);
+  });
 
-  const originalHandleAction = handleAction;
-  handleAction = function patchedDescriptionHandleAction(action, id) {
-    if (action === "toggle-description") {
-      filters.expandedDescriptions[id] = !filters.expandedDescriptions[id];
-      renderApp();
-      return;
-    }
-    originalHandleAction(action, id);
-  };
+  window.extensionRegistry.registerAction("toggle-description", (id) => {
+    filters.expandedDescriptions[id] = !filters.expandedDescriptions[id];
+    renderApp();
+  });
 
   function renderExpandableDescription(vendor, description) {
     const isLong = description.length > DESCRIPTION_SNIPPET_LENGTH;
