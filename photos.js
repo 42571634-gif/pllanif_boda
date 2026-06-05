@@ -12,25 +12,12 @@
   let selectedPhotoFiles = [];
   let selectedPhotoVendorId = "";
 
-  const originalVendorListItem = vendorListItem;
-  vendorListItem = function patchedVendorListItem(vendor) {
-    const html = originalVendorListItem(vendor);
-    if (html.includes('data-action="vendor-photos"')) return html;
-    return html.replace(
-      `<button class="action-btn danger-text" data-action="delete-vendor"`,
-      `<button class="action-btn" data-action="vendor-photos" data-id="${vendor.id}" title="Fotos del proveedor">Fotos</button>
-        <button class="action-btn danger-text" data-action="delete-vendor"`,
-    );
-  };
-
-  const originalHandleAction = handleAction;
-  handleAction = function patchedHandleAction(action, id) {
-    if (action === "vendor-photos") {
-      openPhotosModal(id);
-      return;
-    }
-    originalHandleAction(action, id);
-  };
+  if (window.extensionRegistry) {
+    window.extensionRegistry.registerVendorAction((vendor) => {
+      return `<button class="action-btn" data-action="vendor-photos" data-id="${vendor.id}" title="Fotos del proveedor">Fotos</button>`;
+    });
+    window.extensionRegistry.registerAction("vendor-photos", openPhotosModal);
+  }
 
   async function openPhotosModal(vendorId) {
     const vendor = state.vendors.find((item) => item.id === vendorId);
