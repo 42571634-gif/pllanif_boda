@@ -30,6 +30,33 @@
   gap: 10px;
 }
 
+.photo-selected-files {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfaf8;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.photo-selected-files strong {
+  color: var(--ink);
+}
+
+.photo-selected-files ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.photo-selected-files li span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .photo-upload-progress {
   display: grid;
   gap: 8px;
