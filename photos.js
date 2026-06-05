@@ -7,6 +7,10 @@
   const PHOTO_MAX_DIMENSION = 1600;
   const PHOTO_JPEG_QUALITY = 0.78;
   const PHOTO_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+  const PHOTO_ACCEPT_TYPES = [...PHOTO_MIME_TYPES, "image/*"];
+
+  let selectedPhotoFiles = [];
+  let selectedPhotoVendorId = "";
 
   const originalVendorListItem = vendorListItem;
   vendorListItem = function patchedVendorListItem(vendor) {
@@ -32,6 +36,8 @@
     const vendor = state.vendors.find((item) => item.id === vendorId);
     if (!vendor) return;
 
+    selectedPhotoFiles = [];
+    selectedPhotoVendorId = vendorId;
     openModal(renderPhotosModal(vendor, [], true), "wide");
 
     try {
@@ -65,8 +71,9 @@
       <form id="photo-upload-form" class="photo-upload">
         <label class="field full">
           <span>Subir fotos</span>
-          <input id="vendor-photo-input" type="file" accept="${PHOTO_MIME_TYPES.join(",")}" multiple ${remaining ? "" : "disabled"} />
+          <input id="vendor-photo-input" type="file" accept="${PHOTO_ACCEPT_TYPES.join(",")}" multiple ${remaining ? "" : "disabled"} />
         </label>
+        <div id="photo-selected-files" class="photo-selected-files" aria-live="polite">${renderSelectedPhotoFiles()}</div>
         <div class="photo-upload-actions">
           <button class="btn" type="submit" ${remaining ? "" : "disabled"}>Subir fotos</button>
           ${vendor.drive_folder_url ? `<a class="btn secondary" href="${escapeHtml(vendor.drive_folder_url)}" target="_blank" rel="noreferrer">Abrir carpeta</a>` : ""}
@@ -114,10 +121,22 @@
   }
 
   function bindPhotosModal(vendorId, photos) {
+    const input = document.getElementById("vendor-photo-input");
+    input?.addEventListener("change", () => {
+      selectedPhotoVendorId = vendorId;
+      selectedPhotoFiles = Array.from(input.files || []);
+      renderSelectedPhotoFilesIntoDom();
+    });
+
     document.getElementById("photo-upload-form")?.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const input = document.getElementById("vendor-photo-input");
-      await handlePhotoUpload(vendorId, Array.from(input?.files || []), photos);
+      const fallbackFiles = Array.from(input?.files || []);
+      const files = selectedPhotoVendorId === vendorId && selectedPhotoFiles.length ? selectedPhotoFiles : fallbackFiles;
+      await handlePhotoUpload(vendorId, files, photos);
+    });
+
+    modalRoot.querySelectorAll("[data-close]").forEach((button) => {
+      button.addEventListener("click", clearSelectedPhotoFiles);
     });
 
     document.querySelectorAll("[data-photo-action]").forEach((button) => {
@@ -140,6 +159,8 @@
       const activeCount = currentPhotos.filter((photo) => !photo.is_deleted).length;
       validatePhotoFiles(files, activeCount);
       renderPhotoProgress(files.map((file) => ({ name: file.name, status: "waiting", detail: formatPhotoBytes(file.size) })));
+      updatePhotoProgress(0, "working", "Sincronizando proveedor...");
+      await ensureRemoteVendor(vendorId);
 
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index];
@@ -151,6 +172,7 @@
         updatePhotoProgress(index, "done", `Subida como ${formatPhotoBytes(payload.size_bytes)}.`);
       }
 
+      clearSelectedPhotoFiles();
       await refreshVendorPhotos(vendorId, "Fotos subidas correctamente.");
     } catch (error) {
       markActivePhotoProgressError(error.message);
@@ -165,9 +187,17 @@
     }
 
     files.forEach((file) => {
-      if (!PHOTO_MIME_TYPES.includes(file.type)) throw new Error(`${file.name} no es JPG, PNG o WEBP.`);
+      if (!isAllowedPhotoFile(file)) throw new Error(`${file.name} no es JPG, PNG o WEBP.`);
       if (file.size > PHOTO_MAX_ORIGINAL_SIZE_BYTES) throw new Error(`${file.name} supera ${formatPhotoBytes(PHOTO_MAX_ORIGINAL_SIZE_BYTES)}.`);
     });
+  }
+
+  function isAllowedPhotoFile(file) {
+    if (PHOTO_MIME_TYPES.includes(file.type)) return true;
+    if (file.type && file.type.startsWith("image/")) {
+      return /\.(jpe?g|png|webp)$/i.test(file.name || "");
+    }
+    return /\.(jpe?g|png|webp)$/i.test(file.name || "");
   }
 
   async function fileToCompressedPhotoPayload(file) {
@@ -283,6 +313,27 @@
     return postToGooglePhotos(apiUrl, { action: "uploadVendorPhoto", vendor_id: vendorId, ...photo });
   }
 
+  async function ensureRemoteVendor(vendorId) {
+    const apiUrl = getApiUrl();
+    if (!apiUrl) throw new Error("Configura la URL Apps Script antes de subir fotos.");
+    const vendor = state.vendors.find((item) => item.id === vendorId);
+    if (!vendor) throw new Error("No se encontro el proveedor local para sincronizar.");
+
+    try {
+      const result = await postToGooglePhotos(apiUrl, { action: "upsertVendor", vendor });
+      if (result.vendor) {
+        const current = state.vendors.find((item) => item.id === vendorId);
+        if (current) {
+          Object.assign(current, result.vendor);
+          saveState();
+        }
+      }
+      return result;
+    } catch (error) {
+      throw new Error(`No se pudo sincronizar el proveedor antes de subir fotos: ${error.message}`);
+    }
+  }
+
   async function deleteVendorPhoto(vendorId, photoId) {
     const apiUrl = getApiUrl();
     if (!apiUrl) throw new Error("Configura la URL Apps Script antes de eliminar fotos.");
@@ -345,6 +396,29 @@
       )
       .join("");
     setPhotoStatus("Preparando fotos...");
+  }
+
+  function renderSelectedPhotoFiles() {
+    if (!selectedPhotoFiles.length) return `<span class="hint">Ningun archivo seleccionado.</span>`;
+    return `
+      <strong>${selectedPhotoFiles.length} archivo${selectedPhotoFiles.length === 1 ? "" : "s"} seleccionado${selectedPhotoFiles.length === 1 ? "" : "s"}</strong>
+      <ul>
+        ${selectedPhotoFiles.map((file) => `<li>${escapeHtml(file.name)} <span>${formatPhotoBytes(file.size)}</span></li>`).join("")}
+      </ul>
+    `;
+  }
+
+  function renderSelectedPhotoFilesIntoDom() {
+    const target = document.getElementById("photo-selected-files");
+    if (target) target.innerHTML = renderSelectedPhotoFiles();
+  }
+
+  function clearSelectedPhotoFiles() {
+    selectedPhotoFiles = [];
+    selectedPhotoVendorId = "";
+    const input = document.getElementById("vendor-photo-input");
+    if (input) input.value = "";
+    renderSelectedPhotoFilesIntoDom();
   }
 
   function updatePhotoProgress(index, status, detail) {
