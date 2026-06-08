@@ -11,16 +11,21 @@
   if (key === ACCESS_KEY) {
     localStorage.setItem(STORAGE_KEY, "true");
     localStorage.setItem(KEY_STORAGE, ACCESS_KEY);
-    window.setTimeout(() => {
-      const cleanUrl = new URL(window.location.href);
-      cleanUrl.searchParams.delete("key");
-      window.history.replaceState({}, "", cleanUrl.toString());
-    }, 0);
+    cleanKeyAfterStartup();
     return;
   }
 
   if (!key && saved) {
     url.searchParams.set("key", ACCESS_KEY);
     window.history.replaceState({}, "", url.toString());
+    cleanKeyAfterStartup();
+  }
+
+  function cleanKeyAfterStartup() {
+    window.setTimeout(() => {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("key");
+      window.history.replaceState({}, "", cleanUrl.toString());
+    }, 0);
   }
 })();
