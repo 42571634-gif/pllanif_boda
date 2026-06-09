@@ -77,13 +77,33 @@ function doPost(e) {
         last_sync_at: new Date().toISOString(),
         last_sync_actor: body.actor || "front",
       });
-      appendSyncLog_("upload", "ok", data);
+      appendSyncLog_("upload", "ok", data, body.actor || "front");
       return json_({ ok: true, savedAt: new Date().toISOString() });
     }
 
     if (body.action === "upsertVendor") {
-      const vendor = upsertVendor_(body.vendor || {});
-      return json_({ ok: true, vendor: vendor });
+      const result = upsertEntity_(CONFIG.SHEETS.vendors, body.vendor || {}, "upsertVendor", body.actor);
+      return json_({ ok: true, vendor: result.row, conflict: result.conflict });
+    }
+
+    if (body.action === "upsertPayment") {
+      const result = upsertEntity_(CONFIG.SHEETS.payments, body.payment || {}, "upsertPayment", body.actor);
+      return json_({ ok: true, payment: result.row, conflict: result.conflict });
+    }
+
+    if (body.action === "upsertBudget") {
+      const result = upsertEntity_(CONFIG.SHEETS.budgets, body.budget || {}, "upsertBudget", body.actor);
+      return json_({ ok: true, budget: result.row, conflict: result.conflict });
+    }
+
+    if (body.action === "softDeleteVendor") {
+      const result = softDeleteEntity_(CONFIG.SHEETS.vendors, body.id, body.updated_at, "softDeleteVendor", body.actor);
+      return json_({ ok: true, vendor: result.row, conflict: result.conflict });
+    }
+
+    if (body.action === "softDeletePayment") {
+      const result = softDeleteEntity_(CONFIG.SHEETS.payments, body.id, body.updated_at, "softDeletePayment", body.actor);
+      return json_({ ok: true, payment: result.row, conflict: result.conflict });
     }
 
     if (body.action === "listVendorPhotos") {
@@ -189,12 +209,51 @@ function replaceTable_(sheetName, rows) {
   sheet.getRange(startRow, 1, matrix.length, headers.length).setValues(matrix);
 }
 
-function upsertVendor_(vendor) {
-  if (!vendor.id) throw new Error("Missing vendor id.");
-  const normalized = Object.assign({}, vendor, { updated_at: new Date().toISOString() });
-  upsertTableRow_(CONFIG.SHEETS.vendors, normalized, Object.keys(normalized));
-  appendSyncLog_("upsertVendor", "ok", { vendors: [normalized] });
-  return normalized;
+function upsertEntity_(sheetName, row, action, actor) {
+  if (!row.id) throw new Error("Missing row id.");
+  const current = findTableRowById_(sheetName, row.id, Object.keys(row));
+  if (isRemoteNewer_(current, row)) {
+    appendSyncLog_(action, "conflict_remote_newer", { entity: sheetName, id: row.id }, actor);
+    return { row: current, conflict: true };
+  }
+  const normalized = Object.assign({}, row, { updated_at: row.updated_at || new Date().toISOString() });
+  upsertTableRow_(sheetName, normalized, Object.keys(normalized));
+  upsertSettings_({
+    last_sync_at: new Date().toISOString(),
+    last_sync_actor: actor || "front",
+  });
+  appendSyncLog_(action, "ok", { entity: sheetName, id: normalized.id }, actor);
+  return { row: normalized, conflict: false };
+}
+
+function softDeleteEntity_(sheetName, id, updatedAt, action, actor) {
+  if (!id) throw new Error("Missing row id.");
+  const current = findTableRowById_(sheetName, id);
+  if (!current) throw new Error("Row not found: " + id);
+  const incoming = Object.assign({}, current, {
+    id: id,
+    is_deleted: true,
+    deleted_at: updatedAt || new Date().toISOString(),
+    updated_at: updatedAt || new Date().toISOString(),
+  });
+  if (isRemoteNewer_(current, incoming)) {
+    appendSyncLog_(action, "conflict_remote_newer", { entity: sheetName, id: id }, actor);
+    return { row: current, conflict: true };
+  }
+  upsertTableRow_(sheetName, incoming, Object.keys(incoming));
+  upsertSettings_({
+    last_sync_at: new Date().toISOString(),
+    last_sync_actor: actor || "front",
+  });
+  appendSyncLog_(action, "ok", { entity: sheetName, id: id }, actor);
+  return { row: incoming, conflict: false };
+}
+
+function isRemoteNewer_(current, incoming) {
+  if (!current || !current.updated_at || !incoming.updated_at) return false;
+  const currentTime = Date.parse(current.updated_at);
+  const incomingTime = Date.parse(incoming.updated_at);
+  return Number.isFinite(currentTime) && Number.isFinite(incomingTime) && currentTime > incomingTime;
 }
 
 function upsertTableRow_(sheetName, row, extraHeaders) {
@@ -385,14 +444,14 @@ function upsertSettings_(settings) {
   });
 }
 
-function appendSyncLog_(direction, status, payload) {
+function appendSyncLog_(direction, status, payload, actor) {
   try {
     const sheet = sheet_(CONFIG.SHEETS.sync_log);
     sheet.appendRow([
       "sync_" + Date.now(),
       new Date().toISOString(),
       new Date().toISOString(),
-      "front",
+      actor || "front",
       direction,
       status,
       countRows_(payload),
@@ -428,7 +487,8 @@ function isTruthy_(value) {
 
 function countRows_(payload) {
   if (!payload || typeof payload !== "object") return 0;
-  return ["vendors", "payments", "budgets"].reduce((count, key) => {
+  if (payload.entity && payload.id) return 1;
+  return ["vendors", "payments", "budgets", "photos"].reduce((count, key) => {
     return count + (Array.isArray(payload[key]) ? payload[key].length : 0);
   }, 0);
 }
