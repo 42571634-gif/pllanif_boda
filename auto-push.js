@@ -4,6 +4,7 @@
   if (typeof upsert !== "function" || typeof softDelete !== "function") return;
 
   const QUEUE_KEY = `${STORAGE_PREFIX}:pendingSync:v2`;
+  const DEFAULT_REMOTE_API_URL = "https://script.google.com/macros/s/AKfycbxTnacdtk_tAOfp4rSVOkDFs-4gYSQunZtI8RHxkwTlQdXUw6s98w-_k0efp4kmTY6rMA/exec";
   const COLLECTIONS = {
     vendors: { upsert: "upsertVendor", delete: "softDeleteVendor", responseKey: "vendor" },
     payments: { upsert: "upsertPayment", delete: "softDeletePayment", responseKey: "payment" },
@@ -13,6 +14,13 @@
   let queue = loadQueue();
   let processing = false;
   let initialPullStarted = false;
+
+  const originalGetApiUrl = getApiUrl;
+  getApiUrl = function onlineFirstGetApiUrl() {
+    const configured = String(state.sync.apiUrl || "").trim();
+    if (LOCAL_API_VALUES.includes(configured.toLowerCase())) return "";
+    return originalGetApiUrl() || DEFAULT_REMOTE_API_URL;
+  };
 
   const originalUpsert = upsert;
   upsert = function onlineFirstUpsert(collection, item) {
