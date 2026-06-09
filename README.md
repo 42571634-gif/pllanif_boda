@@ -33,12 +33,12 @@ https://42571634-gif.github.io/pllanif_boda/?key=boda-2026
 - Presupuesto total editable y presupuesto maximo por categoria.
 - Confirmacion de exito para operaciones.
 - Reconfirmacion antes de eliminar.
-- Persistencia local con `localStorage`.
-- Sincronizacion opcional con Google Sheets mediante Apps Script.
+- Cache local con `localStorage` y cola de pendientes.
+- Sincronizacion online-first con Google Sheets mediante Apps Script.
 
 ## Google Apps Script
 
-El archivo `google-apps-script/Code.gs` contiene una API simple para leer y escribir contra Google Sheets.
+El archivo `google-apps-script/Code.gs` contiene la API para leer y escribir contra Google Sheets.
 
 ### Configuracion manual
 
@@ -73,7 +73,7 @@ Who has access: Anyone with the link
 https://42571634-gif.github.io/pllanif_boda/?key=boda-2026
 ```
 
-La URL del Web App ya esta guardada como API por defecto en `app.js`:
+La URL del Web App usada por defecto en el modulo de sincronizacion es:
 
 ```text
 https://script.google.com/macros/s/AKfycbxTnacdtk_tAOfp4rSVOkDFs-4gYSQunZtI8RHxkwTlQdXUw6s98w-_k0efp4kmTY6rMA/exec
@@ -89,6 +89,14 @@ La key del front se envia al Apps Script. Si no coincide con `APP_KEY`, el scrip
 
 ### Uso
 
-- `Cargar desde Drive`: descarga `vendors`, `payments` y `budgets` desde Google Sheets.
-- `Subir a Drive`: reemplaza esas tablas en Google Sheets con el estado local actual.
-- Si no pasas `api=WEB_APP_URL`, la app conserva el modo local simulado con `localStorage`.
+- Al ingresar a la app, descarga `vendors`, `payments` y `budgets` desde Google Sheets automaticamente.
+- Al crear, editar o eliminar proveedores y pagos, sube solo ese registro.
+- Al editar presupuestos, sube solo ese presupuesto.
+- `Cargar desde Drive` fuerza una descarga completa y luego reintenta pendientes.
+- `Subir a Drive` reintenta la cola y envia los registros locales por operaciones granulares; ya no debe usarse como reemplazo completo de tablas.
+- Si Google falla, la app usa cache local y conserva una cola de pendientes para reintentar luego.
+- Si quieres desactivar la API y trabajar en local, guarda `local`, `none` u `off` como URL de API.
+
+### Importante al publicar cambios de backend
+
+Actualizar este repositorio no cambia el Web App ya desplegado. Despues de modificar `google-apps-script/Code.gs`, hay que copiar el archivo al editor de Apps Script y crear un nuevo deployment o actualizar el deployment existente.
